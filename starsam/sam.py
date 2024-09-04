@@ -1,6 +1,5 @@
 import numpy as np
 from scipy.optimize import fsolve
-from numba import njit
 from scipy.integrate import solve_ivp as ivp
 # N.B. In this script, BAC refers to Bond, Arnett, and Carr 1984, ApJ, 280, 825
 
@@ -22,18 +21,17 @@ cnofrac_solar = 10.0**(8.46-12) + 10.0**(7.83-12) + 10.0**(8.69 - 12) #fraction 
 allowed_mdots = ["bondi", "bhl", "tidal", "gap", "smh"]
 
 #M is Mstar/Msun
-@njit	# BAC Equation 8
+# BAC Equation 8
 def _solveM(sg, M, Yt):
     M3 = 1.141*sg**2*(1 + 4*Yt/sg)**1.5
     return M - M3
 
 #solve for modified accretion rate as in Cantiello et al. 2021
-@njit
 def _solveAcc(M, dM0, Ls, v2, Ledd):
     mmod = dM0*(1 - np.tanh( (Ls + M*v2)/Ledd ) )
     return mmod-M
 
-@njit	#BAC Equations A2, A3, and earlier unnumbered equation
+#BAC Equations A2, A3, and earlier unnumbered equation
 def _solveT(T, Xn, sg, X, Y):
     Yt = 0.25*(6*X + Y + 2)	# total number of nuclei and electrons per baryon
     Yp = X			# protons per baryon
@@ -48,19 +46,16 @@ def _solveT(T, Xn, sg, X, Y):
 
 ##Base Accretion rate options
 #Assume Bondi accretion
-@njit
 def _mdotBondi(M, rho, cs):
     Rb = 2.0*G*M/cs**2
     return np.pi*rho*cs*Rb**2
 
 #Assume Bondi-Hoyle-Lyttleton accretion
-@njit
 def _mdotBHL(M, rho, cs, v):
     return 4.0*np.pi*rho*(G*M)**2/(cs**2 + v**2)**1.5
 
 #Assume Stone, Metzger, Haiman 2017 accretion (Eq. 2 and 3)
 #N.B. For consistency with the other formulae, I have introduced a factor of 4.
-@njit
 def _mdotSMH(M, rho, cs, omega, v, Mbh, h):
     H = h*(omega**2/(G*Mbh))**(-1/3)
     Rh = (G*M/(3*omega**2))**(1/3)
@@ -69,7 +64,6 @@ def _mdotSMH(M, rho, cs, omega, v, Mbh, h):
     return 4.0*np.pi*rho*sig*Racc*np.min(np.array([Racc, H]))
 
 #Bondi or Hill-limited Accretion
-@njit
 def _mdotTidal(M, rho, cs, omega):
     Rh = (G*M/(3*omega**2))**(1/3)
     Rb = 2.0*G*M/cs**2
@@ -78,7 +72,6 @@ def _mdotTidal(M, rho, cs, omega):
     return Mdot0
 
 #Account for a gap, if one forms. Follows Duffell & Macfadyen 2013, Fung+ 2014, Kanagawa+2025. Also cite Choski+ 2023.
-@njit
 def _mdotGap(M, rho, cs, omega, Mbh, h, alpha):
     Rh = (G*M/(3*omega**2))**(1/3)
     Rb = 2.0*G*M/cs**2
