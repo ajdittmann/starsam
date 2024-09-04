@@ -38,5 +38,5 @@ setup(
     author_email="dittmann@ias.edu",
     packages=["starsam"],
     description="Semi-analytical models of stellar evolution in AGN disks and other dense environments.",
-    install_requires=["numpy","numba","scipy"],
+    install_requires=["numpy","scipy"],
 )
