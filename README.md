@@ -1,5 +1,5 @@
 # starsam
-Semi-analytical models of stellar evolution in AGN disks
+Semi-analytical models of stellar evolution in AGN disks. See [the paper](https://arxiv.org/abs/2409.02981) for details. 
 
 ## Installation
 First, clone the repository using ``git clone https://github.com/ajdittmann/starsam.git``.  
@@ -54,4 +54,4 @@ starsam also proviedes a helper function in case you are using a different ODE s
 A few examples demonstrating how to run some basic simulations can be found in the [examples](examples/) directory.
 
 ## References
-This package solves a set of equations described in Dittmann & Cantiello 2024. Essentially, it combines approximate models for aspects of stellar evolution in AGN disks (such as accretion and mass loss), primarily developed in these papers ([1](https://ui.adsabs.harvard.edu/abs/2021ApJ...910...94C/abstract),[2](https://ui.adsabs.harvard.edu/abs/2021ApJ...916...48D/abstract)), with approximate models of stellar structure developed in ([3](https://ui.adsabs.harvard.edu/abs/1964ApJS....9..201F/abstract),[4](https://ui.adsabs.harvard.edu/abs/1984ApJ...280..825B/abstract))
+This package solves a set of equations described in [Dittmann & Cantiello 2024](https://arxiv.org/abs/2409.02981). Essentially, it combines approximate models for aspects of stellar evolution in AGN disks (such as accretion and mass loss), primarily developed in these papers ([1](https://ui.adsabs.harvard.edu/abs/2021ApJ...910...94C/abstract),[2](https://ui.adsabs.harvard.edu/abs/2021ApJ...916...48D/abstract)), with approximate models of stellar structure developed in ([3](https://ui.adsabs.harvard.edu/abs/1964ApJS....9..201F/abstract),[4](https://ui.adsabs.harvard.edu/abs/1984ApJ...280..825B/abstract))
