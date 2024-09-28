@@ -14,7 +14,6 @@ lsun = 3.839 *10**33
 mev2erg = 1.60218*10**-6	# erg per MeV
 spy = 3.154*10**7		# seconds per year
 
-
 # The fraction (by number) of C, N, O atoms using Asplund, Amarsi, and Grevesse 2021
 cnofrac_solar = 10.0**(8.46-12) + 10.0**(7.83-12) + 10.0**(8.69 - 12) #fraction by number of C, N, and O to H in solar abundances
 
@@ -71,7 +70,7 @@ def _mdotTidal(M, rho, cs, omega):
     Mdot0 = np.pi*rho*cs*Racc**2
     return Mdot0
 
-#Account for a gap, if one forms. Follows Duffell & Macfadyen 2013, Fung+ 2014, Kanagawa+2025. Also cite Choski+ 2023.
+#Account for a gap, if one forms. Follows Duffell & Macfadyen 2013, Fung+ 2014, Kanagawa+ 2015, Choski+ 2023.
 def _mdotGap(M, rho, cs, omega, Mbh, h, alpha):
     Rh = (G*M/(3*omega**2))**(1/3)
     Rb = 2.0*G*M/cs**2
@@ -145,7 +144,6 @@ def _runaway_event(t, f, rho, cs, X, Y, Z, v, omega, mbh, h, alpha, mdot_method,
         Mdot_gain = _mdotTidal(msun*Ms, rho0, cs0, omega)
     if mdot_method == "gap":
         Mdot_gain = _mdotGap(msun*Ms, rho0, cs0, omega0, mbh, h, alpha)
-
 
     MX = f[0]
     MY = f[1]
@@ -288,10 +286,10 @@ def getExtras(t, f, rho0, cs0, X0, Y0, Z0, v0=None, omega0=None, Mbh=None, h0=No
     Ledd = 1.2*10**38*Ms/Ye 	# erg /s, BAC equation 9b
     Ls = Gamma*Ledd
 
-    Mdot_burn = Ls*4*mh/(27*mev2erg) 	#g / s, approximation for H burning
+    Mdot_burn = Ls*4*mh/(26.73*mev2erg) 	#g / s, approximation for H burning
     Mdot_burn *= spy/msun 		# msun / yr
 
-    # trying to calculate N mass fraction:
+    # calculate N mass fraction:
     NH = MX/mh 				# number of H atoms in the star
     NN = cnofrac_solar*NH*(Zs/0.0139) 	#scale by Z/Zsolar
     Xn = NN*14*mh / Ms
@@ -460,10 +458,10 @@ def fdot(t, f, rho0, cs0, X0, Y0, Z0, v0=None, omega0=None, Mbh=None, h0=None, a
     Ledd = 1.2*10**38*Ms/Ye 	# erg /s, BAC equation 9b
     Ls = Gamma*Ledd
 
-    Mdot_burn = Ls*4*mh/(27*mev2erg) 	#g / s, approximation for H burning
+    Mdot_burn = Ls*4*mh/(26.73*mev2erg)	#g / s, approximation for H burning
     Mdot_burn *= spy/msun 		# msun / yr
 
-    # trying to calculate N mass fraction:
+    # calculate N mass fraction:
     NH = MX/mh 				# number of H atoms in the star
     NN = cnofrac_solar*NH*(Zs/0.0139) 	#scale by Z/Zsolar
     Xn = NN*14*mh / Ms
