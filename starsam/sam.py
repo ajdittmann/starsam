@@ -458,7 +458,7 @@ def fdot(t, f, rho0, cs0, X0, Y0, Z0, v0=None, omega0=None, Mbh=None, h0=None, a
             print("Terminating model")
             return -1
     if fnu<0.0:
-        print("neutrino losses cannot make fusion more efficient, setting to 0.")
+        print("neutrino losses cannot make fusion more efficient, setting to 0")
         fnu = 0.0
     if fnu>1.0:
         print("neutrino losses cannot be more than 1 (100%), setting to 0.1 (10%)")
