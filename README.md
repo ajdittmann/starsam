@@ -5,8 +5,10 @@ Semi-analytical models of stellar evolution in AGN disks. See [the paper](https:
 First, clone the repository using ``git clone https://github.com/ajdittmann/starsam.git``.  
 Then, install the package using ``pip install -e .`` or ``python setup.py install``. 
 
+Although it is not required, if [numba](https://numba.pydata.org/) is installed it will be used to accelerate calculations.
+
 ## Usage
-After installation, you can simulate the evolution of either nonrotating stars. These solve the ODEs approximating """main sequence""" (hydrogen-burning) stellar evolution in AGN disks using scipy's ``solve_ivp`` along with vetting the runtime options and determining which of the multiple stopping criteria was employed. 
+After installation, you can simulate the evolution of stars in dense environments. These solve the ODEs approximating """main sequence""" (hydrogen-burning) stellar evolution in AGN disks using scipy's ``solve_ivp`` along with vetting the runtime options and determining which of the multiple stopping criteria was employed. 
 
 To use this in a script, after importing ``starsam``, simply use the ``sam.run`` function. 
 ```
@@ -19,7 +21,7 @@ In the above example, ``Ms`` is the initial stellar mass (in solar masses); ``Xs
 
 The full call signature of ``sam.run`` is 
 ```
-sam.run(Ms, Xs, Ys, Zs, X0, Y0, Z0, Tend, rho0=10**-18, cs0=10**6, v0=None, omega0=None, h0=None, Mbh=None, alpha=None, mdot_method="bondi", full_output=False, t_eval=None, method='RK45', rtol=None, atol=None, tkh=None)
+sam.run(Ms, Xs, Ys, Zs, X0, Y0, Z0, Tend, rho0=10**-18, cs0=10**6, v0=None, omega0=None, h0=None, Mbh=None, alpha=None, mdot_method="bondi", full_output=False, t_eval=None, method='RK45', rtol=None, atol=None, tkh=None, fnu=0.1)
 ```
 Here, the optional arguments are
 * ``rho0``, the density (in cgs) of the AGN disk at the location of the star. Functions of time are allowed. Used in every accretion prescription.
@@ -35,14 +37,15 @@ Here, the optional arguments are
 * ``method``, the ODE algorithm used by ``solve_ivp``. Defaults to ``RK45``.
 * ``rtol``, the relative error tolerance used by ``solve_ivp``. Defaults to ``1e-6``.
 * ``atol``, the absolute error tolerance used by ``solve_ivp``. Defaults to ``rtol/1000`` so that ``rtol`` should dominate in most cases.
-* ``tkh``, The stellar Kelvin-Helmholtz timescale in years, used to estimate when the star accretes faster than in can thermally adjust, leading to runaway accretion. May be a constant, or function of stellar mass, radius, and luminosity (in cgs). Defaults to the estimate for an n=3 polytrope. 
+* ``tkh``, The stellar Kelvin-Helmholtz timescale in years, used to estimate when the star accretes faster than in can thermally adjust, leading to runaway accretion. May be a constant, or function of stellar mass, radius, and luminosity (in cgs). Defaults to the estimate for an n=3 polytrope.
+* ``fnu``, The fraction of energy released via neutrinos during hydrogen fusion, by default 10%. 
 
 ## Advanced Usage
 At its core, starsam solves a set of ordinary differential equations for the hydrogen, helium, and metal mass of a star in an AGN disk. The ``sam.run`` function solves these equations, given some initial conditions, using``scipy.integrate.solve_ivp``. If you would like to use your own integration method, or couple this model of stellar evolution to a larger system of differental equations (such as an N-body system), starsam also provides a ``sam.fdot`` function, which returns ``df/dt`` in solar masses/year, where ``f`` is an array of the stellar mass in hydrogen, helium, and metals. 
 
 The full call signature of ``sam.fdot`` is 
 ```
-sam.fdot(t, f, rho0, cs0, X0, Y0, Z0, v0=None, omega0=None, Mbh=None, h0=None, alpha=None, mdot_method="bondi", tkh=None):
+sam.fdot(t, f, rho0, cs0, X0, Y0, Z0, v0=None, omega0=None, Mbh=None, h0=None, alpha=None, mdot_method="bondi", tkh=None, fnu=0.1):
 ```
 Where ``t`` is the simulation time in years, ``f`` is an array containting the mass of the star in hydrogen, helium, and metals. The other variables have the same roles as described above in the ``sam.run`` function call.
 
