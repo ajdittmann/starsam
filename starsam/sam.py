@@ -19,18 +19,29 @@ cnofrac_solar = 10.0**(8.46-12) + 10.0**(7.83-12) + 10.0**(8.69 - 12) #fraction 
 
 allowed_mdots = ["bondi", "bhl", "tidal", "gap", "smh"]
 
+try:
+  from numba import njit
+  def cdec(func):
+    return njit(func)
+except ModuleNotFoundError:
+  def cdec(func):
+    return func
+
 #M is Mstar/Msun
 # BAC Equation 8
+@cdec
 def _solveM(sg, M, Yt):
     M3 = 1.141*sg**2*(1 + 4*Yt/sg)**1.5
     return M - M3
 
 #solve for modified accretion rate as in Cantiello et al. 2021
+@cdec
 def _solveAcc(M, dM0, Ls, v2, Ledd):
     mmod = dM0*(1 - np.tanh( (Ls + M*v2)/Ledd ) )
     return mmod-M
 
 #BAC Equations A2, A3, and earlier unnumbered equation
+@cdec
 def _solveT(T, Xn, sg, X, Y):
     Yt = 0.25*(6*X + Y + 2)	# total number of nuclei and electrons per baryon
     Yp = X			# protons per baryon
@@ -45,16 +56,19 @@ def _solveT(T, Xn, sg, X, Y):
 
 ##Base Accretion rate options
 #Assume Bondi accretion
+@cdec
 def _mdotBondi(M, rho, cs):
     Rb = 2.0*G*M/cs**2
     return np.pi*rho*cs*Rb**2
 
 #Assume Bondi-Hoyle-Lyttleton accretion
+@cdec
 def _mdotBHL(M, rho, cs, v):
     return 4.0*np.pi*rho*(G*M)**2/(cs**2 + v**2)**1.5
 
 #Assume Stone, Metzger, Haiman 2017 accretion (Eq. 2 and 3)
 #N.B. For consistency with the other formulae, I have introduced a factor of 4.
+@cdec
 def _mdotSMH(M, rho, cs, omega, v, Mbh, h):
     H = h*(omega**2/(G*Mbh))**(-1/3)
     Rh = (G*M/(3*omega**2))**(1/3)
@@ -63,6 +77,7 @@ def _mdotSMH(M, rho, cs, omega, v, Mbh, h):
     return 4.0*np.pi*rho*sig*Racc*np.min(np.array([Racc, H]))
 
 #Bondi or Hill-limited Accretion
+@cdec
 def _mdotTidal(M, rho, cs, omega):
     Rh = (G*M/(3*omega**2))**(1/3)
     Rb = 2.0*G*M/cs**2
@@ -71,6 +86,7 @@ def _mdotTidal(M, rho, cs, omega):
     return Mdot0
 
 #Account for a gap, if one forms. Follows Duffell & Macfadyen 2013, Fung+ 2014, Kanagawa+ 2015, Choski+ 2023.
+@cdec
 def _mdotGap(M, rho, cs, omega, Mbh, h, alpha):
     Rh = (G*M/(3*omega**2))**(1/3)
     Rb = 2.0*G*M/cs**2
@@ -82,16 +98,17 @@ def _mdotGap(M, rho, cs, omega, Mbh, h, alpha):
     Mdot_out = Mdot0/(1 + 0.04*K)
     return Mdot_out
 
-def _exhaust_event(t, f, rho, cs, X, Y, Z, v, omega, mbh, h, alpha, mdot_method, tkh):
+def _exhaust_event(t, f, rho, cs, X, Y, Z, v, omega, mbh, h, alpha, mdot_method, tkh, fnu):
     X = f[0]
     return X
 _exhaust_event.terminal = True
 
+@cdec
 def _timescaleKH(M, R, L):
     tau = 1.5*G*M**2/(R*L*spy)
     return tau
 
-def _runaway_event(t, f, rho, cs, X, Y, Z, v, omega, mbh, h, alpha, mdot_method, tkh):
+def _runaway_event(t, f, rho, cs, X, Y, Z, v, omega, mbh, h, alpha, mdot_method, tkh, fnu):
     Ms = np.sum(f)
 
     if callable(rho):
@@ -190,7 +207,7 @@ def _runaway_event(t, f, rho, cs, X, Y, Z, v, omega, mbh, h, alpha, mdot_method,
 
 _runaway_event.terminal = True
 
-def getExtras(t, f, rho0, cs0, X0, Y0, Z0, v0=None, omega0=None, Mbh=None, h0=None, alpha=None, mdot_method='bondi', tkh=None):
+def getExtras(t, f, rho0, cs0, X0, Y0, Z0, v0=None, omega0=None, Mbh=None, h0=None, alpha=None, mdot_method='bondi', tkh=None, fnu=0.1):
     """
     Calculate models of stellar evolution in AGN disks.
 
@@ -224,6 +241,8 @@ def getExtras(t, f, rho0, cs0, X0, Y0, Z0, v0=None, omega0=None, Mbh=None, h0=No
         Stellar accretion model. Must be one of ['bondi', 'bhl', 'tidal', 'gap', 'smh']. Defaults to 'bondi'.
     tkh  : float or function, optional
         Not used at present.
+    fnu  : float, optional
+        The fraction of energy lost via neutrinos during fusion. Defaults to 10%
 
     Returns
     -------
@@ -286,7 +305,7 @@ def getExtras(t, f, rho0, cs0, X0, Y0, Z0, v0=None, omega0=None, Mbh=None, h0=No
     Ledd = 1.2*10**38*Ms/Ye 	# erg /s, BAC equation 9b
     Ls = Gamma*Ledd
 
-    Mdot_burn = Ls*4*mh/(26.73*mev2erg) 	#g / s, approximation for H burning
+    Mdot_burn = Ls*4*mh/((1.0-fnu)*26.73*mev2erg) 	#g / s, approximation for H burning
     Mdot_burn *= spy/msun 		# msun / yr
 
     # calculate N mass fraction:
@@ -321,7 +340,7 @@ def getExtras(t, f, rho0, cs0, X0, Y0, Z0, v0=None, omega0=None, Mbh=None, h0=No
 
     return Mdot_gain, Mdot_loss, Mdot_burn, Ls/lsun, Rs, Tc
 
-def fdot(t, f, rho0, cs0, X0, Y0, Z0, v0=None, omega0=None, Mbh=None, h0=None, alpha=None, mdot_method="bondi", tkh=None):
+def fdot(t, f, rho0, cs0, X0, Y0, Z0, v0=None, omega0=None, Mbh=None, h0=None, alpha=None, mdot_method="bondi", tkh=None, fnu=0.1):
     """
     Calculate models of stellar evolution in AGN disks.
 
@@ -355,6 +374,8 @@ def fdot(t, f, rho0, cs0, X0, Y0, Z0, v0=None, omega0=None, Mbh=None, h0=None, a
         Stellar accretion model. Must be one of ['bondi', 'bhl', 'tidal', 'gap', 'smh']. Defaults to 'bondi'.
     tkh  : float or function, optional
         Not used at present, but necessary for consistency with solve_ivp event checking.
+    fnu  : float, optional
+        The fraction of energy lost via neutrinos during fusion. Defaults to 10%.
 
     Returns
     -------
@@ -436,6 +457,12 @@ def fdot(t, f, rho0, cs0, X0, Y0, Z0, v0=None, omega0=None, Mbh=None, h0=None, a
             print("Error: Stone-Metzger-Haiman requires setting an SMBH mass ('Mbh', constant, in solar masses).")
             print("Terminating model")
             return -1
+    if fnu<0.0:
+        print("neutrino losses cannot make fusion more efficient, setting to 0.")
+        fnu = 0.0
+    if fnu>1.0:
+        print("neutrino losses cannot be more than 1 (100%), setting to 0.1 (10%)")
+        fnu = 0.1
 
     MX = f[0]
     MY = f[1]
@@ -458,7 +485,7 @@ def fdot(t, f, rho0, cs0, X0, Y0, Z0, v0=None, omega0=None, Mbh=None, h0=None, a
     Ledd = 1.2*10**38*Ms/Ye 	# erg /s, BAC equation 9b
     Ls = Gamma*Ledd
 
-    Mdot_burn = Ls*4*mh/(26.73*mev2erg)	#g / s, approximation for H burning
+    Mdot_burn = Ls*4*mh/((1.0-fnu)*26.73*mev2erg)	#g / s, approximation for H burning
     Mdot_burn *= spy/msun 		# msun / yr
 
     # calculate N mass fraction:
@@ -497,7 +524,7 @@ def fdot(t, f, rho0, cs0, X0, Y0, Z0, v0=None, omega0=None, Mbh=None, h0=None, a
 
     return np.array([dMx, dMy, dMz])
 
-def run(Ms, Xs, Ys, Zs, X0, Y0, Z0, Tend, rho0=10**-18, cs0=10**6, v0=None, omega0=None, h0=None, Mbh=None, alpha=None, mdot_method="bondi", full_output=False, t_eval=None, method='RK54', rtol=1e-6, atol=None, tkh=None):
+def run(Ms, Xs, Ys, Zs, X0, Y0, Z0, Tend, rho0=10**-18, cs0=10**6, v0=None, omega0=None, h0=None, Mbh=None, alpha=None, mdot_method="bondi", full_output=False, t_eval=None, method='RK54', rtol=1e-6, atol=None, tkh=None, fnu=0.1):
     """
     Calculate models of stellar evolution in AGN disks.
 
@@ -548,6 +575,8 @@ def run(Ms, Xs, Ys, Zs, X0, Y0, Z0, Tend, rho0=10**-18, cs0=10**6, v0=None, omeg
     tkh  : float or function, optional
         The adopted formula for the Kelvin-Helmholtz timescale in years. As a function, it should take the stellar mass,
         radius, and luminosity (in cgs units) as arguments. Defaults to 1.5*G*M^2/(R*L), the value for an n=3 polutrope.
+    fnu  : float, optional
+        The fraction of energy lost via neutrinos during fusion. Defaults to 10%
 
     Returns (default)
     -------
@@ -636,6 +665,12 @@ def run(Ms, Xs, Ys, Zs, X0, Y0, Z0, Tend, rho0=10**-18, cs0=10**6, v0=None, omeg
             print("Error: Stone-Metzger-Haiman requires setting an SMBH mass ('Mbh', constant, in solar masses).")
             print("Terminating model")
             return -1
+    if fnu<0.0:
+        print("neutrino losses cannot make fusion more efficient, setting to 0.")
+        fnu = 0.0
+    if fnu>1.0:
+        print("neutrino losses cannot be more than 1 (100%), setting to 0.1 (10%)")
+        fnu = 0.1
 
     if tkh is None:
         tkh = _timescaleKH
@@ -644,7 +679,7 @@ def run(Ms, Xs, Ys, Zs, X0, Y0, Z0, Tend, rho0=10**-18, cs0=10**6, v0=None, omeg
 
     ## check that ICs are valid
     #check that initial condition does not result in runaway:
-    runval = _runaway_event(0.0, Ms0, rho0, cs0, X0, Y0, Z0, v0, omega0, Mbh, h0, alpha, mdot_method, tkh)
+    runval = _runaway_event(0.0, Ms0, rho0, cs0, X0, Y0, Z0, v0, omega0, Mbh, h0, alpha, mdot_method, tkh, fnu)
     if runval < 0:
         print("Initial conditions will lead to runaway accretion")
         print("Terminating model")
@@ -672,7 +707,7 @@ def run(Ms, Xs, Ys, Zs, X0, Y0, Z0, Tend, rho0=10**-18, cs0=10**6, v0=None, omeg
     if atol is None:
         atol = 0.001*rtol
 
-    sol = ivp(fdot, (0, Tend), Ms0, t_eval = t_eval, args = (rho0, cs0, X0, Y0, Z0, v0, omega0, Mbh, h0, alpha, mdot_method, tkh ), events = (_exhaust_event, _runaway_event), rtol=rtol, atol=atol )
+    sol = ivp(fdot, (0, Tend), Ms0, t_eval = t_eval, args = (rho0, cs0, X0, Y0, Z0, v0, omega0, Mbh, h0, alpha, mdot_method, tkh, fnu ), events = (_exhaust_event, _runaway_event), rtol=rtol, atol=atol )
     T = sol.t
     y = sol.y
     m = np.sum(y,axis=0)
@@ -691,7 +726,7 @@ def run(Ms, Xs, Ys, Zs, X0, Y0, Z0, Tend, rho0=10**-18, cs0=10**6, v0=None, omeg
         Mx, My, Mz = y[0,:], y[1,:], y[2,:]
         extras = np.empty((Nt, 6))
         for i in range(Nt):
-            mdot_gain, mdot_loss, mdot_burn, Ls, Rs, Tc = getExtras(T[i], y[:,i], rho0, cs0, X0, Y0, Z0, v0, omega0, Mbh, h0, alpha, mdot_method, tkh )
+            mdot_gain, mdot_loss, mdot_burn, Ls, Rs, Tc = getExtras(T[i], y[:,i], rho0, cs0, X0, Y0, Z0, v0, omega0, Mbh, h0, alpha, mdot_method, tkh, fnu )
             extras[i,0]=mdot_gain
             extras[i,1]=mdot_loss
             extras[i,2]=mdot_burn
