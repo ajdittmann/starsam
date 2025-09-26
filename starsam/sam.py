@@ -9,7 +9,9 @@ msun = 1.989*10**33
 mh = 1.6726*10**-24
 rsun = 6.955*10**10
 lsun = 3.839 *10**33
-rada = 7.566*10**-16
+sbc = 1.8914785*10**-15  #Stefan-Boltzmann divided by c
+kboltz = 1.380658*10**-16
+
 
 # unit conversion factors
 mev2erg = 1.60218*10**-6	# erg per MeV
@@ -28,6 +30,8 @@ except ModuleNotFoundError:
   def cdec(func):
     return func
 
+#### nonlinear structure equations ###
+
 #M is Mstar/Msun
 # BAC Equation 8
 @cdec
@@ -35,16 +39,13 @@ def _solveM(sg, M, Yt):
     M3 = 1.141*sg**2*(1 + 4*Yt/sg)**1.5
     return M - M3
 
-#solve for modified accretion rate as in Cantiello et al. 2021
+#solve for T given cs, tau, rho, mu
 @cdec
-def _solveAcc(M, dM0, Ls, v2, Ledd):
-    mmod = dM0*(1 - np.tanh( (Ls + M*v2)/Ledd ) )
-    return mmod-M
-
-#Feedback-limited accretion (Chen, Jiang, Goodman, & Lin 2024)
-def _solveFeedback(M, R, Ledd, v2, Ls, Rs, rho0, T0 ):
-
-    return mmod-M
+def _solveTemp(T, cs0, taufact, rho0, mu, tau):
+    Teff4 = T**4/taufact
+    prad = 0.5*tau*sbc*Teff4
+    pgas = rho0*kboltz*T/mu
+    return cs0**2*rho0 - prad - pgas
 
 #BAC Equations A2, A3, and earlier unnumbered equation
 @cdec
@@ -60,7 +61,7 @@ def _solveT(T, Xn, sg, X, Y):
     Tc = 2.67*(1 - 0.021*np.log(A) - 0.021/np.log(Xn) + 0.053*np.log(T) )**-3
     return T - Tc
 
-##Base Accretion rate options
+#### Base (linear) accretion rate functions ####
 #Assume Bondi accretion
 @cdec
 def _mdotBondi(M, rho, cs):
@@ -104,7 +105,53 @@ def _mdotGap(M, rho, cs, omega, Mbh, h, alpha):
     Mdot_out = Mdot0/(1 + 0.04*K)
     return Mdot_out
 
-def _exhaust_event(t, f, rho, cs, X, Y, Z, v, omega, mbh, h, alpha, mdot_method, tkh, fnu):
+@cdec
+def _LshockV2(dM, v2, Ls, Ledd):
+  return 0.5*dM*v2*(1 - Ls/Ledd)/(1 + dM*v2/Ledd)
+
+@cdec
+def _Lshock(dM, v2, Ls, Ledd):
+  return 0.5*dM*v2
+
+#### nonlinear accretion equations ###
+
+#solve for modified accretion rate as in Cantiello et al. 2021
+@cdec
+def _solveAcc(M, dM0, Ls, v2, Ledd):
+    mmod = dM0*(1 - np.tanh( (Ls + M*v2)/Ledd ) )
+    return mmod-M
+
+#solve for modified accretion rate - 2021 form with v_esc reduction
+@cdec
+def _solveAccV2(M, dM0, Ls, v2, Ledd):
+    Lshk = M*v2*(1 - Ls/Ledd)/(1 + M*v2/Ledd)
+    mmod = dM0*(1 - np.tanh( (Ls + Lshk)/Ledd ) )
+    return mmod-M
+
+#Feedback-limited accretion (Chen, Jiang, Goodman, & Lin 2024)
+#Note, it seems like they do not include shock luminosity in the accretion reduction
+@cdec
+def _solveFeedback(dM, dMb, v2, cr2, Ls, Ledd):
+    Lshk = 0.5*dM*v2*(1 - Ls/Ledd)/(1 + dM*v2/Ledd)
+    dMr = (Ledd - Ls - Lshk)/cr2
+    dMg = (Ledd - Ls - Lshk)/v2
+    dMfb = 1.0/(1./dMr + 1./dMg)
+    rhs = dM
+    lhs = dMb*(1.0 - dM/dMfb)**2.0
+    return lhs-rhs
+
+#Feedback-limited accretion - 2024 form with v_esc reduction
+@cdec
+def _solveFeedbackV2(dM, dMb, v2, cr2, Ls, Ledd):
+    Lshk = 0.5*dM*v2*(1 - Ls/Ledd)/(1 + 0.5*dM*v2/Ledd)
+    dMr = (Ledd - Ls - Lshk)/cr2
+    dMg = Ledd/v2
+    dMfb = 1.0/(1./dMr + 1./dMg)
+    rhs = dM
+    lhs = dMb*(1.0 - dM/dMfb)**2.0
+    return lhs-rhs
+
+def _exhaust_event(t, f, rho, cs, X, Y, Z, v, tau, omega, mbh, h, alpha, mdot_method, tkh, fnu, esc_reduce):
     X = f[0]
     return X
 _exhaust_event.terminal = True
@@ -114,7 +161,7 @@ def _timescaleKH(M, R, L):
     tau = 1.5*G*M**2/(R*L*spy)
     return tau
 
-def _runaway_event(t, f, rho, cs, X, Y, Z, v, omega, mbh, h, alpha, mdot_method, tkh, fnu):
+def _runaway_event(t, f, rho, cs, X, Y, Z, v, tau, omega, mbh, h, alpha, mdot_method, tkh, fnu, esc_reduce):
     Ms = np.sum(f)
 
     if callable(rho):
@@ -131,6 +178,11 @@ def _runaway_event(t, f, rho, cs, X, Y, Z, v, omega, mbh, h, alpha, mdot_method,
         v0 = v(t)
     else:
         v0 = v
+
+    if callable(tau):
+        tau0 = tau(t)
+    else:
+        tau0 = tau
 
     if callable(h):
         h0 = h(t)
@@ -185,28 +237,61 @@ def _runaway_event(t, f, rho, cs, X, Y, Z, v, omega, mbh, h, alpha, mdot_method,
     Rs = 30.4*Yt*sigma**0.5*(1+sigma)**0.5/Tc #in Rsun
     vesc2 = 2.0*G*Ms*msun/(Rs*rsun)
 
-    if mdot_method = "feedback":
-        #x, info, err, mesg = fsolve(_solveTcs, Mdot_gain, args=(Mdot_gain, Ls, 0.5*vesc2, Ledd), full_output = 1, xtol = 10**-11)
-        #first need to solve for Tgas, then for mdot
-        #need to implement feedback accretion rate
+
+    if mdot_method == "feedback":
+        taufact = 0.5*(0.75*tau0 + 1.0 + 0.5/tau0)
+        mu = mh*4.0/(3.0 + 5.0*X0 - Z0)
+        guessT = cs0*cs0*mu/(kboltz)    #guess temperature assuming gas
+
+        x, info, err, mesg = fsolve(_solveTemp, guessT, args = (cs0, taufact, rho0, mu, tau0), full_output = 1, xtol = 10**-11)
+        T0 = x[0]
+
+        Teff4 = T0**4/taufact
+        csrad2 = Teff4*sbc*tau0*0.5/rho0
+        dMr = (1-Gamma)*Ledd/csrad2
+        dMg = (1-Gamma)*Ledd/vesc2
+        dMfb = 1.0/(1.0/dMr + 1.0/dMg)
+        #dMb = _mdotBondi(msun*Ms, rho0, cs0)
+        dMb = _mdotTidal(msun*Ms, rho0, cs0, omega0)
+        dMguess = np.min([dMb, dMg, dMr])
+        if esc_reduce:
+            x, info, err, mesg = fsolve(_solveFeedbackV2, dMguess, args = (dMb, vesc2, csrad2, Ls, Ledd), full_output = 1, xtol = 10**-11)
+        else:
+            x, info, err, mesg = fsolve(_solveFeedback, dMguess, args = (dMb, vesc2, csrad2, Ls, Ledd), full_output = 1, xtol = 10**-11)
+        Mdot_gain = x[0]
+
     else:
         if mdot_method == "bondi":
             Mdot_gain = _mdotBondi(msun*Ms, rho0, cs0)
         if mdot_method == "bhl":
             Mdot_gain = _mdotBHL(msun*Ms, rho0, cs0, v0)
         if mdot_method == "smh":
-            Mdot_gain = _mdotSMH(msun*Ms, rho0, cs0, omega, v0, mbh, h)
+            Mdot_gain = _mdotSMH(msun*Ms, rho0, cs0, omega0, v0, Mbh, h0)
         if mdot_method == "tidal":
-            Mdot_gain = _mdotTidal(msun*Ms, rho0, cs0, omega)
+            Mdot_gain = _mdotTidal(msun*Ms, rho0, cs0, omega0)
         if mdot_method == "gap":
-            Mdot_gain = _mdotGap(msun*Ms, rho0, cs0, omega0, mbh, h, alpha)
+            Mdot_gain = _mdotGap(msun*Ms, rho0, cs0, omega0, Mbh, h0, alpha)
 
-        # calculate radiation-adjusted accretion rate iteratively, including shock luminosity
-        x, info, err, mesg = fsolve(_solveAcc, Mdot_gain, args=(Mdot_gain, Ls, 0.5*vesc2, Ledd), full_output = 1, xtol = 10**-11)
+        if esc_reduce:
+            x, info, err, mesg = fsolve(_solveAccV2, Mdot_gain, args=(Mdot_gain, Ls, 0.5*vesc2, Ledd), full_output = 1, xtol = 10**-11)
+        else:
+            x, info, err, mesg = fsolve(_solveAcc, Mdot_gain, args=(Mdot_gain, Ls, 0.5*vesc2, Ledd), full_output = 1, xtol = 10**-11)
         Mdot_gain = x[0]
 
-    Mdot_gain*= spy/msun
 
+    if esc_reduce:
+        Lshock = _LshockV2(Mdot_gain, vesc2, Ls, Ledd)
+        Ltot = Lshock + Ls
+        vesc2 = vesc2*(1 - Ltot/Ledd)
+        vesc2 = np.max([vesc2, 10.0**-10]) # prevent sign changes....
+        Mdot_loss = (Ltot/vesc2)*(1.0 + np.tanh( 10.0*( Ltot/Ledd - 1) )) #g/s
+
+    else:
+        Lshock = _Lshock(Mdot_gain, vesc2, Ls, Ledd)
+        Ltot = Lshock + Ls
+        Mdot_loss = (Ltot/vesc2)*(1.0 + np.tanh( 10.0*( Ltot/Ledd - 1) )) #g/s
+
+    Mdot_gain*= spy/msun
     tacc = Ms/Mdot_gain
 
     if callable(tkh):
@@ -218,7 +303,7 @@ def _runaway_event(t, f, rho, cs, X, Y, Z, v, omega, mbh, h, alpha, mdot_method,
 
 _runaway_event.terminal = True
 
-def getExtras(t, f, rho0, cs0, X0, Y0, Z0, v0=None, omega0=None, Mbh=None, h0=None, alpha=None, mdot_method='bondi', tkh=None, fnu=0.1):
+def getExtras(t, f, rho0, cs0, X0, Y0, Z0, v0=None, omega0=None, Mbh=None, h0=None, alpha=None, mdot_method='bondi', tkh=None, fnu=0.1, esc_reduce=False):
     """
     Calculate models of stellar evolution in AGN disks.
 
@@ -254,6 +339,8 @@ def getExtras(t, f, rho0, cs0, X0, Y0, Z0, v0=None, omega0=None, Mbh=None, h0=No
         Not used at present.
     fnu  : float, optional
         The fraction of energy lost via neutrinos during fusion. Defaults to 10%
+    esc_reduce  : Boolean, optional
+        If True, reduces the escape velocity according to the Eddington ratio. Defaults to False. 
 
     Returns
     -------
@@ -328,30 +415,65 @@ def getExtras(t, f, rho0, cs0, X0, Y0, Z0, v0=None, omega0=None, Mbh=None, h0=No
     Rs = 30.4*Yt*sigma**0.5*(1+sigma)**0.5/Tc #in Rsun
     vesc2 = 2.0*G*Ms*msun/(Rs*rsun)
 
-    if mdot_method == "bondi":
-        Mdot_gain = _mdotBondi(msun*Ms, rho0, cs0)
-    if mdot_method == "bhl":
-        Mdot_gain = _mdotBHL(msun*Ms, rho0, cs0, v0)
-    if mdot_method == "smh":
-        Mdot_gain = _mdotSMH(msun*Ms, rho0, cs0, omega, v0, Mbh, h)
-    if mdot_method == "tidal":
-        Mdot_gain = _mdotTidal(msun*Ms, rho0, cs0, omega0)
-    if mdot_method == "gap":
-        Mdot_gain = _mdotGap(msun*Ms, rho0, cs0, omega0, Mbh, h0, alpha)
+    if mdot_method == "feedback":
+        taufact = 0.5*(0.75*tau0 + 1.0 + 0.5/tau0)
+        mu = mh*4.0/(3.0 + 5.0*X0 - Z0)
+        guessT = cs0*cs0*mu/(kboltz)    #guess temperature assuming gas
 
-    # calculate radiation-adjusted accretion rate iteratively, including shock luminosity
-    x, info, err, mesg = fsolve(_solveAcc, Mdot_gain, args=(Mdot_gain, Ls, 0.5*vesc2, Ledd), full_output = 1, xtol = 10**-11)
-    Mdot_gain = x[0]
+        x, info, err, mesg = fsolve(_solveTemp, guessT, args = (cs0, taufact, rho0, mu, tau0), full_output = 1, xtol = 10**-11)
+        T0 = x[0]
 
-    Lshock = Mdot_gain*0.5*vesc2
-    Mdot_loss = ((Ls+Lshock)/vesc2)*(1.0 + np.tanh( 10.0*( (Ls + Lshock)/Ledd - 1) )) #g/s
+        Teff4 = T0**4/taufact
+        csrad2 = Teff4*sbc*tau0*0.5/rho0
+        dMr = (1-Gamma)*Ledd/csrad2
+        dMg = (1-Gamma)*Ledd/vesc2
+        dMfb = 1.0/(1.0/dMr + 1.0/dMg)
+        #dMb = _mdotBondi(msun*Ms, rho0, cs0)
+        dMb = _mdotTidal(msun*Ms, rho0, cs0, omega0)
+        dMguess = np.min([dMb, dMg, dMr])
+        if esc_reduce:
+            x, info, err, mesg = fsolve(_solveFeedbackV2, dMguess, args = (dMb, vesc2, csrad2, Ls, Ledd), full_output = 1, xtol = 10**-11)
+        else:
+            x, info, err, mesg = fsolve(_solveFeedback, dMguess, args = (dMb, vesc2, csrad2, Ls, Ledd), full_output = 1, xtol = 10**-11)
+        Mdot_gain = x[0]
+
+    else:
+        if mdot_method == "bondi":
+            Mdot_gain = _mdotBondi(msun*Ms, rho0, cs0)
+        if mdot_method == "bhl":
+            Mdot_gain = _mdotBHL(msun*Ms, rho0, cs0, v0)
+        if mdot_method == "smh":
+            Mdot_gain = _mdotSMH(msun*Ms, rho0, cs0, omega0, v0, Mbh, h0)
+        if mdot_method == "tidal":
+            Mdot_gain = _mdotTidal(msun*Ms, rho0, cs0, omega0)
+        if mdot_method == "gap":
+            Mdot_gain = _mdotGap(msun*Ms, rho0, cs0, omega0, Mbh, h0, alpha)
+
+        if esc_reduce:
+            x, info, err, mesg = fsolve(_solveAccV2, Mdot_gain, args=(Mdot_gain, Ls, 0.5*vesc2, Ledd), full_output = 1, xtol = 10**-11)
+        else:
+            x, info, err, mesg = fsolve(_solveAcc, Mdot_gain, args=(Mdot_gain, Ls, 0.5*vesc2, Ledd), full_output = 1, xtol = 10**-11)
+        Mdot_gain = x[0]
+
+
+    if esc_reduce:
+        Lshock = _LshockV2(Mdot_gain, vesc2, Ls, Ledd)
+        Ltot = Lshock + Ls
+        vesc2 = vesc2*(1 - Ltot/Ledd)
+        vesc2 = np.max([vesc2, 10.0**-10]) # prevent sign changes....
+        Mdot_loss = (Ltot/vesc2)*(1.0 + np.tanh( 10.0*( Ltot/Ledd - 1) )) #g/s
+
+    else:
+        Lshock = _Lshock(Mdot_gain, vesc2, Ls, Ledd)
+        Ltot = Lshock + Ls
+        Mdot_loss = (Ltot/vesc2)*(1.0 + np.tanh( 10.0*( Ltot/Ledd - 1) )) #g/s
 
     Mdot_gain*= spy/msun
     Mdot_loss*= spy/msun #msun / yr
 
     return Mdot_gain, Mdot_loss, Mdot_burn, Ls/lsun, Rs, Tc
 
-def fdot(t, f, rho0, cs0, X0, Y0, Z0, v0=None, omega0=None, Mbh=None, h0=None, alpha=None, mdot_method="bondi", tkh=None, fnu=0.1):
+def fdot(t, f, rho0, cs0, X0, Y0, Z0, v0=None, tau0=None, omega0=None, Mbh=None, h0=None, alpha=None, mdot_method="bondi", tkh=None, fnu=0.1, esc_reduce=False):
     """
     Calculate models of stellar evolution in AGN disks.
 
@@ -367,10 +489,12 @@ def fdot(t, f, rho0, cs0, X0, Y0, Z0, v0=None, omega0=None, Mbh=None, h0=None, a
         Ambient helium mass fraction.
     Z0 : float
         Ambient metallicity.
-    rho0 : float or function, optional.
-        Ambient density. Either a constant value (in g/cm^3) or a function of time in years. Defaults to 10^-18 g/cm^3.
-    cs0 : float or function, optional.
-        Ambient sound speed. Either a constant value (in cm/s) or a function of time in years. Defaults to 10^6 cm/s.
+    rho0 : float or function.
+        Ambient density. Either a constant value (in g/cm^3) or a function of time in years.
+    cs0 : float or function.
+        Ambient sound speed. Either a constant value (in cm/s) or a function of time in years.
+    tau0 : float or function. Required for 'feedback' accretion, otherwise optional
+        Ambient optical depth. Either a constant value or a function of time in years.
     v0 : float or function. Optional for 'bondi', 'gap,' and 'tidal' accretion, but required for 'bhl' and 'smh' accretion.
         The velocity of the star relative to the ambient medium (in cm/s).
     omega0 : float or function. Optional for 'bondi' and 'bhl' accretion, but required for 'tidal,' 'smh,' or 'gap' accretion.
@@ -387,6 +511,8 @@ def fdot(t, f, rho0, cs0, X0, Y0, Z0, v0=None, omega0=None, Mbh=None, h0=None, a
         Not used at present, but necessary for consistency with solve_ivp event checking.
     fnu  : float, optional
         The fraction of energy lost via neutrinos during fusion. Defaults to 10%.
+    esc_reduce  : Boolean, optional
+        If True, reduces the escape velocity according to the Eddington ratio. Defaults to False. 
 
     Returns
     -------
@@ -405,6 +531,9 @@ def fdot(t, f, rho0, cs0, X0, Y0, Z0, v0=None, omega0=None, Mbh=None, h0=None, a
 
     if callable(v0):
         v0 = v0(t)
+
+    if callable(tau0):
+        tau0 = tau0(t)
 
     if callable(omega0):
         omega0 = omega0(t)
@@ -427,6 +556,11 @@ def fdot(t, f, rho0, cs0, X0, Y0, Z0, v0=None, omega0=None, Mbh=None, h0=None, a
     if mdot_method == "bhl":
         if v0 is None:
             print("Error: Bondi-Hoyle-Lyttleton accretion requires setting a velocity ('v0', constant or function, in cgs).")
+            print("Terminating model")
+            return -1
+    if mdot_method == "feedback":
+        if tau0 is None:
+            print("Error: 'feedback' accretion requires setting an optical depth ('tau0', constant or function).")
             print("Terminating model")
             return -1
     if mdot_method == "tidal":
@@ -508,14 +642,28 @@ def fdot(t, f, rho0, cs0, X0, Y0, Z0, v0=None, omega0=None, Mbh=None, h0=None, a
     Rs = 30.4*Yt*sigma**0.5*(1+sigma)**0.5/Tc #in Rsun
     vesc2 = 2.0*G*Ms*msun/(Rs*rsun)
 
-    #feedback TBD
     if mdot_method == "feedback":
-        #first need to solve for Tgas, then for mdot
-        #x, info, err, mesg = fsolve(_solveFeedback,
-    Mdot_gain, args=(Mdot_gain, Ls, 0.5*vesc2, Ledd)
-    , full_output = 1, xtol = 10**-11)
+        taufact = 0.5*(0.75*tau0 + 1.0 + 0.5/tau0)
+        mu = mh*4.0/(3.0 + 5.0*X0 - Z0)
+        guessT = cs0*cs0*mu/(kboltz)	#guess temperature assuming gas
 
+        x, info, err, mesg = fsolve(_solveTemp, guessT, args = (cs0, taufact, rho0, mu, tau0), full_output = 1, xtol = 10**-11)
+        T0 = x[0]
+
+        Teff4 = T0**4/taufact
+        csrad2 = Teff4*sbc*tau0*0.5/rho0
+        dMr = (1-Gamma)*Ledd/csrad2
+        dMg = (1-Gamma)*Ledd/vesc2
+        dMfb = 1.0/(1.0/dMr + 1.0/dMg)
+        #dMb = _mdotBondi(msun*Ms, rho0, cs0)
+        dMb = _mdotTidal(msun*Ms, rho0, cs0, omega0)
+        dMguess = np.min([dMb, dMg, dMr])
+        if esc_reduce:
+            x, info, err, mesg = fsolve(_solveFeedbackV2, dMguess, args = (dMb, vesc2, csrad2, Ls, Ledd), full_output = 1, xtol = 10**-11)
+        else:
+            x, info, err, mesg = fsolve(_solveFeedback, dMguess, args = (dMb, vesc2, csrad2, Ls, Ledd), full_output = 1, xtol = 10**-11)
         Mdot_gain = x[0]
+
     else:
         if mdot_method == "bondi":
             Mdot_gain = _mdotBondi(msun*Ms, rho0, cs0)
@@ -528,12 +676,25 @@ def fdot(t, f, rho0, cs0, X0, Y0, Z0, v0=None, omega0=None, Mbh=None, h0=None, a
         if mdot_method == "gap":
             Mdot_gain = _mdotGap(msun*Ms, rho0, cs0, omega0, Mbh, h0, alpha)
 
-        # calculate radiation-adjusted accretion rate iteratively, including shock luminosity (as in Cantiello+ 2021)
-        x, info, err, mesg = fsolve(_solveAcc, Mdot_gain, args=(Mdot_gain, Ls, 0.5*vesc2, Ledd), full_output = 1, xtol = 10**-11)
+        if esc_reduce:
+            x, info, err, mesg = fsolve(_solveAccV2, Mdot_gain, args=(Mdot_gain, Ls, 0.5*vesc2, Ledd), full_output = 1, xtol = 10**-11)
+        else:
+            x, info, err, mesg = fsolve(_solveAcc, Mdot_gain, args=(Mdot_gain, Ls, 0.5*vesc2, Ledd), full_output = 1, xtol = 10**-11)
         Mdot_gain = x[0]
 
-    Lshock = Mdot_gain*0.5*vesc2
-    Mdot_loss = ((Ls+Lshock)/vesc2)*(1.0 + np.tanh( 10.0*( (Ls + Lshock)/Ledd - 1) )) #g/s
+
+    if esc_reduce:
+        Lshock = _LshockV2(Mdot_gain, vesc2, Ls, Ledd) 
+        Ltot = Lshock + Ls
+        vesc2 = vesc2*(1 - Ltot/Ledd)
+        vesc2 = np.max([vesc2, 10.0**-10]) # prevent sign changes....
+        Mdot_loss = (Ltot/vesc2)*(1.0 + np.tanh( 10.0*( Ltot/Ledd - 1) )) #g/s
+
+    else:
+        Lshock = _Lshock(Mdot_gain, vesc2, Ls, Ledd) 
+        Ltot = Lshock + Ls
+        Mdot_loss = (Ltot/vesc2)*(1.0 + np.tanh( 10.0*( Ltot/Ledd - 1) )) #g/s
+    
 
     Mdot_gain*= spy/msun
     Mdot_loss*= spy/msun #msun / yr
@@ -544,7 +705,7 @@ def fdot(t, f, rho0, cs0, X0, Y0, Z0, v0=None, omega0=None, Mbh=None, h0=None, a
 
     return np.array([dMx, dMy, dMz])
 
-def run(Ms, Xs, Ys, Zs, X0, Y0, Z0, Tend, rho0=10**-18, cs0=10**6, v0=None, omega0=None, h0=None, Mbh=None, alpha=None, mdot_method="bondi", full_output=False, t_eval=None, method='RK54', rtol=1e-6, atol=None, tkh=None, fnu=0.1, check_runaway=False):
+def run(Ms, Xs, Ys, Zs, X0, Y0, Z0, Tend, rho0=10**-18, cs0=10**6, v0=None, tau0=None, omega0=None, h0=None, Mbh=None, alpha=None, mdot_method="bondi", full_output=False, t_eval=None, method='RK54', rtol=1e-6, atol=None, tkh=None, fnu=0.1, check_runaway=False, esc_reduce=False):
     """
     Calculate models of stellar evolution in AGN disks.
 
@@ -570,6 +731,8 @@ def run(Ms, Xs, Ys, Zs, X0, Y0, Z0, Tend, rho0=10**-18, cs0=10**6, v0=None, omeg
         Ambient density. Either a constant value (in g/cm^3) or a function of time in years. Defaults to 10^-18 g/cm^3.
     cs0 : float or function, optional.
         Ambient sound speed. Either a constant value (in cm/s) or a function of time in years. Defaults to 10^6 cm/s.
+    tau0 : float or function. Required for 'feedback' accretion, otherwise optional
+        Ambient optical depth. Either a constant value or a function of time in years.
     v0 : float or function. Optional for 'bondi', 'gap,' and 'tidal' accretion, but required for 'bhl' and 'smh' accretion.
         The velocity of the star relative to the ambient medium (in cm/s).
     omega0 : float or function. Optional for 'bondi' and 'bhl' accretion, but required for 'tidal,' 'smh,' or 'gap' accretion.
@@ -648,6 +811,11 @@ def run(Ms, Xs, Ys, Zs, X0, Y0, Z0, Tend, rho0=10**-18, cs0=10**6, v0=None, omeg
             print("Error: Bondi-Hoyle-Lyttleton accretion requires setting a velocity ('v0', constant or function, in cgs).")
             print("Terminating model")
             return -1
+    if mdot_method == "feedback":
+        if tau0 is None:
+            print("Error: 'feedback' accretion requires setting an optical depth ('tau0', constant or function).")
+            print("Terminating model")
+            return -1
     if mdot_method == "tidal":
         if omega0 is None:
             print("Error: tidal limiting requires setting an angular velocity ('omega0', constant or function, in cgs).")
@@ -709,7 +877,7 @@ def run(Ms, Xs, Ys, Zs, X0, Y0, Z0, Tend, rho0=10**-18, cs0=10**6, v0=None, omeg
 
     if check_runaway:
       #check that initial condition does not result in runaway:
-      runval = _runaway_event(0.0, Ms0, rho0, cs0, X0, Y0, Z0, v0, omega0, Mbh, h0, alpha, mdot_method, tkh, fnu)
+      runval = _runaway_event(0.0, Ms0, rho0, cs0, X0, Y0, Z0, v0, tau0, omega0, Mbh, h0, alpha, mdot_method, tkh, fnu)
       if runval < 0:
           print("Initial conditions will lead to runaway accretion")
           print("Terminating model")
@@ -734,7 +902,7 @@ def run(Ms, Xs, Ys, Zs, X0, Y0, Z0, Tend, rho0=10**-18, cs0=10**6, v0=None, omeg
     if check_runaway: termination_events = (_exhaust_event, _runaway_event)
     else: termination_events = (_exhaust_event)
 
-    sol = ivp(fdot, (0, Tend), Ms0, t_eval = t_eval, args = (rho0, cs0, X0, Y0, Z0, v0, omega0, Mbh, h0, alpha, mdot_method, tkh, fnu ), events = termination_events, rtol=rtol, atol=atol )
+    sol = ivp(fdot, (0, Tend), Ms0, t_eval = t_eval, args = (rho0, cs0, X0, Y0, Z0, v0, tau0, omega0, Mbh, h0, alpha, mdot_method, tkh, fnu, esc_reduce ), events = termination_events, rtol=rtol, atol=atol )
     T = sol.t
     y = sol.y
     m = np.sum(y,axis=0)
@@ -746,7 +914,7 @@ def run(Ms, Xs, Ys, Zs, X0, Y0, Z0, Tend, rho0=10**-18, cs0=10**6, v0=None, omeg
         tevents = sol.t_events
         #if len(tevents[1]) > 0:  termination = "runaway"
         #if len(tevents[0]) > 0:  termination = "hydrogen exhaustion"
-        if len(t_events) > 1: termination = "runaway"
+        if len(tevents) > 1: termination = "runaway"
         else: termination = "hydrogen exhaustion"
     else:
         termination = "timeout"
