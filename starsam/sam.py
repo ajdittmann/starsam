@@ -872,7 +872,7 @@ def run(Ms, Xs, Ys, Zs, X0, Y0, Z0, Tend, rho0=10**-18, cs0=10**6, v0=None, tau0
 
     if check_runaway:
       #check that initial condition does not result in runaway:
-      runval = _runaway_event(0.0, Ms0, rho0, cs0, X0, Y0, Z0, v0, tau0, omega0, Mbh, h0, alpha, mdot_method, tkh, fnu)
+      runval = _runaway_event(0.0, Ms0, rho0, cs0, X0, Y0, Z0, v0, tau0, omega0, Mbh, h0, alpha, mdot_method, tkh, fnu, esc_reduce, do_feedback)
       if runval < 0:
           print("Initial conditions will lead to runaway accretion")
           print("Terminating model")
