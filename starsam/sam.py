@@ -30,6 +30,18 @@ except ModuleNotFoundError:
   def cdec(func):
     return func
 
+#### helper functions ####
+
+# A smooth approximation of min(x,y) using the Boltzmann operator
+@cdec
+def _boltzMin(x, y):
+  f = -np.max([x, y])/400
+  x = x/f
+  y = y/f
+  num = x*np.exp(x) + y*np.exp(y)
+  den = np.exp(x) + np.exp(y)
+  return f*num/den
+
 #### nonlinear structure equations ###
 
 #M is Mstar/Msun
@@ -107,7 +119,7 @@ def _mdotGap(M, rho, cs, omega, Mbh, h, alpha):
 
 @cdec
 def _LshockV2(dM, v2, Ls, Ledd):
-  return 0.5*dM*v2*(1 - Ls/Ledd)/(1 + dM*v2/Ledd)
+  return 0.5*dM*v2*(1 - Ls/Ledd)/(1 + 0.5*dM*v2/Ledd)
 
 @cdec
 def _Lshock(dM, v2, Ls, Ledd):
@@ -263,10 +275,13 @@ def _runaway_event(t, f, rho, cs, X, Y, Z, v, tau, omega, mbh, h, alpha, mdot_me
         dMguess = np.min([Mdot_base, dMg, dMr])
         if esc_reduce:
             x, info, err, mesg = fsolve(_solveFeedbackV2, dMguess, args = (Mdot_base, vesc2, csrad2, Ls, Ledd), full_output = 1, xtol = 10**-11)
+            y, info, err, mesg = fsolve(_solveAccV2, Mdot_base, args=(Mdot_base, Ls, 0.5*vesc2, Ledd), full_output = 1, xtol = 10**-11)
         else:
             x, info, err, mesg = fsolve(_solveFeedback, dMguess, args = (Mdot_base, vesc2, csrad2, Ls, Ledd), full_output = 1, xtol = 10**-11)
-        Mdot_gain = x[0]
-
+            y, info, err, mesg = fsolve(_solveAcc, Mdot_base, args=(Mdot_base, Ls, 0.5*vesc2, Ledd), full_output = 1, xtol = 10**-11)
+        Mdot_fb = x[0]
+        Mdot_rad = y[0]
+        Mdot_gain = _boltzMin(Mdot_rad, Mdot_fb)
     else:
         if esc_reduce:
             x, info, err, mesg = fsolve(_solveAccV2, Mdot_base, args=(Mdot_base, Ls, 0.5*vesc2, Ledd), full_output = 1, xtol = 10**-11)
@@ -277,10 +292,8 @@ def _runaway_event(t, f, rho, cs, X, Y, Z, v, tau, omega, mbh, h, alpha, mdot_me
     if esc_reduce:
         Lshock = _LshockV2(Mdot_gain, vesc2, Ls, Ledd)
         Ltot = Lshock + Ls
-        vesc2 = vesc2*(1 - Ltot/Ledd)
-        vesc2 = np.max([vesc2, 10.0**-10]) # prevent sign changes....
+        vesc2 = vesc2*np.max([1 - Ltot/Ledd, 10**-10]) #clip for stability, just in case
         Mdot_loss = (Ltot/vesc2)*(1.0 + np.tanh( 10.0*( Ltot/Ledd - 1) )) #g/s
-
     else:
         Lshock = _Lshock(Mdot_gain, vesc2, Ls, Ledd)
         Ltot = Lshock + Ls
@@ -909,7 +922,9 @@ def run(Ms, Xs, Ys, Zs, X0, Y0, Z0, Tend, rho0=10**-18, cs0=10**6, v0=None, tau0
         tevents = sol.t_events
         #if len(tevents[1]) > 0:  termination = "runaway"
         #if len(tevents[0]) > 0:  termination = "hydrogen exhaustion"
-        if len(tevents) > 1: termination = "runaway"
+        if len(tevents) > 1: 
+          if tevents[1] > 1: termination = "runaway"
+          else: termination = "hydrogen exhaustion"
         else: termination = "hydrogen exhaustion"
     else:
         termination = "timeout"
