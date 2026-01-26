@@ -35,7 +35,7 @@ except ModuleNotFoundError:
 # A smooth approximation of min(x,y) using the Boltzmann operator
 @cdec
 def _boltzMin(x, y):
-  f = -np.max([x, y])/400
+  f = -max([x, y])/400
   x = x/f
   y = y/f
   num = x*np.exp(x) + y*np.exp(y)
@@ -145,7 +145,7 @@ def _solveAccV2(M, dM0, Ls, v2, Ledd):
 @cdec
 def _solveFeedback(dM, dMb, v2, cr2, Ls, Ledd):
     Lshk = 0.5*dM*v2*(1 - Ls/Ledd)/(1 + dM*v2/Ledd)
-    dMr = (Ledd - Ls - Lshk)/cr2
+    dMr = (Ledd - Ls - Lshk)*0.25/cr2
     dMg = (Ledd - Ls - Lshk)/v2
     dMfb = 1.0/(1./dMr + 1./dMg)
     rhs = dM
@@ -156,7 +156,7 @@ def _solveFeedback(dM, dMb, v2, cr2, Ls, Ledd):
 @cdec
 def _solveFeedbackV2(dM, dMb, v2, cr2, Ls, Ledd):
     Lshk = 0.5*dM*v2*(1 - Ls/Ledd)/(1 + 0.5*dM*v2/Ledd)
-    dMr = (Ledd - Ls - Lshk)/cr2
+    dMr = (Ledd - Ls - Lshk)*0.25/cr2
     dMg = Ledd/v2
     dMfb = 1.0/(1./dMr + 1./dMg)
     rhs = dM
@@ -270,13 +270,15 @@ def _runaway_event(t, f, rho, cs, X, Y, Z, v, tau, omega, mbh, h, alpha, mdot_me
 
         Teff4 = T0**4/taufact
         csrad2 = Teff4*sbc*tau0*0.5/rho0
-        dMr = (1-Gamma)*Ledd/csrad2
-        dMg = (1-Gamma)*Ledd/vesc2
-        dMguess = np.min([Mdot_base, dMg, dMr])
+        dMr = (1-Gamma)*Ledd*0.25/csrad2
         if esc_reduce:
+            dMg = Ledd/vesc2
+            dMguess = np.min([Mdot_base, dMg, dMr])
             x, info, err, mesg = fsolve(_solveFeedbackV2, dMguess, args = (Mdot_base, vesc2, csrad2, Ls, Ledd), full_output = 1, xtol = 10**-11)
             y, info, err, mesg = fsolve(_solveAccV2, Mdot_base, args=(Mdot_base, Ls, 0.5*vesc2, Ledd), full_output = 1, xtol = 10**-11)
         else:
+            dMg = (1-Gamma)*Ledd/vesc2
+            dMguess = np.min([Mdot_base, dMg, dMr])
             x, info, err, mesg = fsolve(_solveFeedback, dMguess, args = (Mdot_base, vesc2, csrad2, Ls, Ledd), full_output = 1, xtol = 10**-11)
             y, info, err, mesg = fsolve(_solveAcc, Mdot_base, args=(Mdot_base, Ls, 0.5*vesc2, Ledd), full_output = 1, xtol = 10**-11)
         Mdot_fb = x[0]
@@ -446,15 +448,18 @@ def getExtras(t, f, rho0, cs0, X0, Y0, Z0, v0=None, omega0=None, Mbh=None, h0=No
 
         Teff4 = T0**4/taufact
         csrad2 = Teff4*sbc*tau0*0.5/rho0
-        dMr = (1-Gamma)*Ledd/csrad2
+        dMr = (1-Gamma)*Ledd*0.25/csrad2
         dMg = (1-Gamma)*Ledd/vesc2
         dMguess = np.min([Mdot_base, dMg, dMr])
         if esc_reduce:
             x, info, err, mesg = fsolve(_solveFeedbackV2, dMguess, args = (Mdot_base, vesc2, csrad2, Ls, Ledd), full_output = 1, xtol = 10**-11)
+            y, info, err, mesg = fsolve(_solveAccV2, Mdot_base, args=(Mdot_base, Ls, 0.5*vesc2, Ledd), full_output = 1, xtol = 10**-11)
         else:
             x, info, err, mesg = fsolve(_solveFeedback, dMguess, args = (Mdot_base, vesc2, csrad2, Ls, Ledd), full_output = 1, xtol = 10**-11)
-        Mdot_gain = x[0]
-
+            y, info, err, mesg = fsolve(_solveAcc, Mdot_base, args=(Mdot_base, Ls, 0.5*vesc2, Ledd), full_output = 1, xtol = 10**-11)
+        Mdot_fb = x[0]
+        Mdot_rad = y[0]
+        Mdot_gain = _boltzMin(Mdot_rad, Mdot_fb)
     else:
         if esc_reduce:
             x, info, err, mesg = fsolve(_solveAccV2, Mdot_base, args=(Mdot_base, Ls, 0.5*vesc2, Ledd), full_output = 1, xtol = 10**-11)
@@ -671,15 +676,19 @@ def fdot(t, f, rho0, cs0, X0, Y0, Z0, v0=None, tau0=None, omega0=None, Mbh=None,
 
         Teff4 = T0**4/taufact
         csrad2 = Teff4*sbc*tau0*0.5/rho0
-        dMr = (1-Gamma)*Ledd/csrad2
+        dMr = (1-Gamma)*Ledd*0.25/csrad2
         dMg = (1-Gamma)*Ledd/vesc2
         dMguess = np.min([Mdot_base, dMg, dMr])
         if esc_reduce:
             x, info, err, mesg = fsolve(_solveFeedbackV2, dMguess, args = (Mdot_base, vesc2, csrad2, Ls, Ledd), full_output = 1, xtol = 10**-11)
+            y, info, err, mesg = fsolve(_solveAccV2, Mdot_base, args=(Mdot_base, Ls, 0.5*vesc2, Ledd), full_output = 1, xtol = 10**-11)
         else:
             x, info, err, mesg = fsolve(_solveFeedback, dMguess, args = (Mdot_base, vesc2, csrad2, Ls, Ledd), full_output = 1, xtol = 10**-11)
-        Mdot_gain = x[0]
-
+            y, info, err, mesg = fsolve(_solveAcc, Mdot_base, args=(Mdot_base, Ls, 0.5*vesc2, Ledd), full_output = 1, xtol = 10**-11)
+        Mdot_fb = x[0]
+        Mdot_rad = y[0]
+        Mdot_gain = _boltzMin(Mdot_rad, Mdot_fb)
+        #print(Mdot_fb, Mdot_rad, Mdot_gain)
     else:
         if esc_reduce:
             x, info, err, mesg = fsolve(_solveAccV2, Mdot_base, args=(Mdot_base, Ls, 0.5*vesc2, Ledd), full_output = 1, xtol = 10**-11)
@@ -706,6 +715,8 @@ def fdot(t, f, rho0, cs0, X0, Y0, Z0, v0=None, tau0=None, omega0=None, Mbh=None,
     dMx = X0*Mdot_gain - Xs*Mdot_loss - Mdot_burn
     dMy = Y0*Mdot_gain - Ys*Mdot_loss + Mdot_burn
     dMz = Z0*Mdot_gain - Zs*Mdot_loss
+
+    #print(t, Mdot_gain, Mdot_loss)
 
     return np.array([dMx, dMy, dMz])
 
