@@ -283,7 +283,6 @@ def _runaway_event(t, f, rho, cs, X, Y, Z, v, tau, omega, mbh, h, alpha, mdot_me
             y, info, err, mesg = fsolve(_solveAcc, Mdot_base, args=(Mdot_base, Ls, 0.5*vesc2, Ledd), full_output = 1, xtol = 10**-11)
         Mdot_fb = x[0]
         Mdot_rad = y[0]
-        #Mdot_gain = _boltzMin(Mdot_rad, Mdot_fb)
         Mdot_gain = np.min([Mdot_rad, Mdot_fb])
     else:
         if esc_reduce:
@@ -314,7 +313,7 @@ def _runaway_event(t, f, rho, cs, X, Y, Z, v, tau, omega, mbh, h, alpha, mdot_me
 
 _runaway_event.terminal = True
 
-def getExtras(t, f, rho0, cs0, X0, Y0, Z0, v0=None, omega0=None, Mbh=None, h0=None, alpha=None, mdot_method='bondi', tkh=None, fnu=0.1, esc_reduce=False, do_feedback=False):
+def getExtras(t, f, rho0, cs0, X0, Y0, Z0, v0=None, tau0=None, omega0=None, Mbh=None, h0=None, alpha=None, mdot_method='bondi', tkh=None, fnu=0.1, esc_reduce=False, do_feedback=False):
     """
     Calculate models of stellar evolution in AGN disks.
 
@@ -460,7 +459,6 @@ def getExtras(t, f, rho0, cs0, X0, Y0, Z0, v0=None, omega0=None, Mbh=None, h0=No
             y, info, err, mesg = fsolve(_solveAcc, Mdot_base, args=(Mdot_base, Ls, 0.5*vesc2, Ledd), full_output = 1, xtol = 10**-11)
         Mdot_fb = x[0]
         Mdot_rad = y[0]
-        #Mdot_gain = _boltzMin(Mdot_rad, Mdot_fb)
         Mdot_gain = np.min([Mdot_rad, Mdot_fb])
     else:
         if esc_reduce:
@@ -689,9 +687,7 @@ def fdot(t, f, rho0, cs0, X0, Y0, Z0, v0=None, tau0=None, omega0=None, Mbh=None,
             y, info, err, mesg = fsolve(_solveAcc, Mdot_base, args=(Mdot_base, Ls, 0.5*vesc2, Ledd), full_output = 1, xtol = 10**-11)
         Mdot_fb = x[0]
         Mdot_rad = y[0]
-        #Mdot_gain = _boltzMin(Mdot_rad, Mdot_fb)
         Mdot_gain = np.min([Mdot_rad, Mdot_fb])
-        #print(Mdot_fb, Mdot_rad, Mdot_gain)
     else:
         if esc_reduce:
             x, info, err, mesg = fsolve(_solveAccV2, Mdot_base, args=(Mdot_base, Ls, 0.5*vesc2, Ledd), full_output = 1, xtol = 10**-11)
@@ -718,8 +714,6 @@ def fdot(t, f, rho0, cs0, X0, Y0, Z0, v0=None, tau0=None, omega0=None, Mbh=None,
     dMx = X0*Mdot_gain - Xs*Mdot_loss - Mdot_burn
     dMy = Y0*Mdot_gain - Ys*Mdot_loss + Mdot_burn
     dMz = Z0*Mdot_gain - Zs*Mdot_loss
-
-    #print(t, Mdot_gain, Mdot_loss)
 
     return np.array([dMx, dMy, dMz])
 
@@ -937,8 +931,6 @@ def run(Ms, Xs, Ys, Zs, X0, Y0, Z0, Tend, rho0=10**-18, cs0=10**6, v0=None, tau0
         termination = "solve_ivp error"
     elif (status == 1):
         tevents = sol.t_events
-        #if len(tevents[1]) > 0:  termination = "runaway"
-        #if len(tevents[0]) > 0:  termination = "hydrogen exhaustion"
         if len(tevents) > 1: 
           if tevents[1] > 1: termination = "runaway"
           else: termination = "hydrogen exhaustion"
@@ -952,7 +944,7 @@ def run(Ms, Xs, Ys, Zs, X0, Y0, Z0, Tend, rho0=10**-18, cs0=10**6, v0=None, tau0
         extras[:,1] = y[1,:]
         extras[:,2] = y[2,:]
         for i in range(Nt):
-            mdot_gain, mdot_loss, mdot_burn, Ls, Rs, Tc = getExtras(T[i], y[:,i], rho0, cs0, X0, Y0, Z0, v0, omega0, Mbh, h0, alpha, mdot_method, tkh, fnu )
+            mdot_gain, mdot_loss, mdot_burn, Ls, Rs, Tc = getExtras(T[i], y[:,i], rho0, cs0, X0, Y0, Z0, v0, tau0, omega0, Mbh, h0, alpha, mdot_method, tkh, fnu, esc_reduce, do_feedback )
             extras[i,3]=mdot_gain
             extras[i,4]=mdot_loss
             extras[i,5]=mdot_burn
@@ -961,4 +953,4 @@ def run(Ms, Xs, Ys, Zs, X0, Y0, Z0, Tend, rho0=10**-18, cs0=10**6, v0=None, tau0
             extras[i,8]=Tc
         return T, m, termination, extras
     else:
-        return T, m, termination, np.zeros(9)
+        return T, m, termination
