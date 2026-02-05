@@ -283,7 +283,8 @@ def _runaway_event(t, f, rho, cs, X, Y, Z, v, tau, omega, mbh, h, alpha, mdot_me
             y, info, err, mesg = fsolve(_solveAcc, Mdot_base, args=(Mdot_base, Ls, 0.5*vesc2, Ledd), full_output = 1, xtol = 10**-11)
         Mdot_fb = x[0]
         Mdot_rad = y[0]
-        Mdot_gain = _boltzMin(Mdot_rad, Mdot_fb)
+        #Mdot_gain = _boltzMin(Mdot_rad, Mdot_fb)
+        Mdot_gain = np.min([Mdot_rad, Mdot_fb])
     else:
         if esc_reduce:
             x, info, err, mesg = fsolve(_solveAccV2, Mdot_base, args=(Mdot_base, Ls, 0.5*vesc2, Ledd), full_output = 1, xtol = 10**-11)
@@ -459,7 +460,8 @@ def getExtras(t, f, rho0, cs0, X0, Y0, Z0, v0=None, omega0=None, Mbh=None, h0=No
             y, info, err, mesg = fsolve(_solveAcc, Mdot_base, args=(Mdot_base, Ls, 0.5*vesc2, Ledd), full_output = 1, xtol = 10**-11)
         Mdot_fb = x[0]
         Mdot_rad = y[0]
-        Mdot_gain = _boltzMin(Mdot_rad, Mdot_fb)
+        #Mdot_gain = _boltzMin(Mdot_rad, Mdot_fb)
+        Mdot_gain = np.min([Mdot_rad, Mdot_fb])
     else:
         if esc_reduce:
             x, info, err, mesg = fsolve(_solveAccV2, Mdot_base, args=(Mdot_base, Ls, 0.5*vesc2, Ledd), full_output = 1, xtol = 10**-11)
@@ -687,7 +689,8 @@ def fdot(t, f, rho0, cs0, X0, Y0, Z0, v0=None, tau0=None, omega0=None, Mbh=None,
             y, info, err, mesg = fsolve(_solveAcc, Mdot_base, args=(Mdot_base, Ls, 0.5*vesc2, Ledd), full_output = 1, xtol = 10**-11)
         Mdot_fb = x[0]
         Mdot_rad = y[0]
-        Mdot_gain = _boltzMin(Mdot_rad, Mdot_fb)
+        #Mdot_gain = _boltzMin(Mdot_rad, Mdot_fb)
+        Mdot_gain = np.min([Mdot_rad, Mdot_fb])
         #print(Mdot_fb, Mdot_rad, Mdot_gain)
     else:
         if esc_reduce:
@@ -900,7 +903,10 @@ def run(Ms, Xs, Ys, Zs, X0, Y0, Z0, Tend, rho0=10**-18, cs0=10**6, v0=None, tau0
       if runval < 0:
           print("Initial conditions will lead to runaway accretion")
           print("Terminating model")
-          return [-1], [-1], "runaway"
+          if full_output:
+              return [-1], [-1], "runaway", np.zeros(9)
+          else:
+              return [-1], [-1], "runaway"
 
     ## time integration parameters
     if Tend <= 0.0:
@@ -941,16 +947,18 @@ def run(Ms, Xs, Ys, Zs, X0, Y0, Z0, Tend, rho0=10**-18, cs0=10**6, v0=None, tau0
         termination = "timeout"
     if full_output:
         Nt = len(m)
-        Mx, My, Mz = y[0,:], y[1,:], y[2,:]
-        extras = np.empty((Nt, 6))
+        extras = np.empty((Nt, 9))
+        extras[:,0] = y[0,:]
+        extras[:,1] = y[1,:]
+        extras[:,2] = y[2,:]
         for i in range(Nt):
             mdot_gain, mdot_loss, mdot_burn, Ls, Rs, Tc = getExtras(T[i], y[:,i], rho0, cs0, X0, Y0, Z0, v0, omega0, Mbh, h0, alpha, mdot_method, tkh, fnu )
-            extras[i,0]=mdot_gain
-            extras[i,1]=mdot_loss
-            extras[i,2]=mdot_burn
-            extras[i,3]=Ls
-            extras[i,4]=Rs
-            extras[i,5]=Tc
-        return T, m, termination, Mx, My, Mz, extras[:,0], extras[:,1], extras[:,2], extras[:,3], extras[:,4], extras[:,5]
+            extras[i,3]=mdot_gain
+            extras[i,4]=mdot_loss
+            extras[i,5]=mdot_burn
+            extras[i,6]=Ls
+            extras[i,7]=Rs
+            extras[i,8]=Tc
+        return T, m, termination, extras
     else:
-        return T, m, termination
+        return T, m, termination, np.zeros(9)
