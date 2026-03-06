@@ -30,18 +30,6 @@ except ModuleNotFoundError:
   def cdec(func):
     return func
 
-#### helper functions ####
-
-# A smooth approximation of min(x,y) using the Boltzmann operator
-@cdec
-def _boltzMin(x, y):
-  f = -max([x, y])/400
-  x = x/f
-  y = y/f
-  num = x*np.exp(x) + y*np.exp(y)
-  den = np.exp(x) + np.exp(y)
-  return f*num/den
-
 #### nonlinear structure equations ###
 
 #M is Mstar/Msun
@@ -313,7 +301,7 @@ def _runaway_event(t, f, rho, cs, X, Y, Z, v, tau, omega, mbh, h, alpha, mdot_me
 
 _runaway_event.terminal = True
 
-def getExtras(t, f, rho0, cs0, X0, Y0, Z0, v0=None, tau0=None, omega0=None, Mbh=None, h0=None, alpha=None, mdot_method='bondi', tkh=None, fnu=0.1, esc_reduce=False, do_feedback=False):
+def getExtras(t, f, rho0, cs0, X0, Y0, Z0, v0=None, tau0=None, omega0=None, Mbh=None, h0=None, alpha=None, mdot_method='bondi', tkh=None, fnu=0.1, esc_reduce=True, do_feedback=False):
     """
     Calculate models of stellar evolution in AGN disks.
 
@@ -350,7 +338,7 @@ def getExtras(t, f, rho0, cs0, X0, Y0, Z0, v0=None, tau0=None, omega0=None, Mbh=
     fnu  : float, optional
         The fraction of energy lost via neutrinos during fusion. Defaults to 10%
     esc_reduce  : Boolean, optional
-        If True, reduces the escape velocity according to the Eddington ratio. Defaults to False. 
+        If True (default), reduces the escape velocity according to the Eddington ratio.
     do_feedback  : Boolean, optional
         If True, reduces the feedback processes limit the accretion rate. Defaults to False.
 
@@ -484,7 +472,7 @@ def getExtras(t, f, rho0, cs0, X0, Y0, Z0, v0=None, tau0=None, omega0=None, Mbh=
 
     return Mdot_gain, Mdot_loss, Mdot_burn, Ls/lsun, Rs, Tc
 
-def fdot(t, f, rho0, cs0, X0, Y0, Z0, v0=None, tau0=None, omega0=None, Mbh=None, h0=None, alpha=None, mdot_method="bondi", tkh=None, fnu=0.1, esc_reduce=False, do_feedback=False):
+def fdot(t, f, rho0, cs0, X0, Y0, Z0, v0=None, tau0=None, omega0=None, Mbh=None, h0=None, alpha=None, mdot_method="bondi", tkh=None, fnu=0.1, esc_reduce=True, do_feedback=False):
     """
     Calculate models of stellar evolution in AGN disks.
 
@@ -523,7 +511,7 @@ def fdot(t, f, rho0, cs0, X0, Y0, Z0, v0=None, tau0=None, omega0=None, Mbh=None,
     fnu  : float, optional
         The fraction of energy lost via neutrinos during fusion. Defaults to 10%.
     esc_reduce  : Boolean, optional
-        If True, reduces the escape velocity according to the Eddington ratio. Defaults to False. 
+        If True (default), reduces the escape velocity according to the Eddington ratio.
     do_feedback  : Boolean, optional
         If True, reduces the feedback processes limit the accretion rate. Defaults to False.
 
@@ -696,17 +684,17 @@ def fdot(t, f, rho0, cs0, X0, Y0, Z0, v0=None, tau0=None, omega0=None, Mbh=None,
         Mdot_gain = x[0]
 
     if esc_reduce:
-        Lshock = _LshockV2(Mdot_gain, vesc2, Ls, Ledd) 
+        Lshock = _LshockV2(Mdot_gain, vesc2, Ls, Ledd)
         Ltot = Lshock + Ls
         vesc2 = vesc2*(1 - Ltot/Ledd)
         vesc2 = np.max([vesc2, 10.0**-10]) # prevent sign changes....
         Mdot_loss = (Ltot/vesc2)*(1.0 + np.tanh( 10.0*( Ltot/Ledd - 1) )) #g/s
 
     else:
-        Lshock = _Lshock(Mdot_gain, vesc2, Ls, Ledd) 
+        Lshock = _Lshock(Mdot_gain, vesc2, Ls, Ledd)
         Ltot = Lshock + Ls
         Mdot_loss = (Ltot/vesc2)*(1.0 + np.tanh( 10.0*( Ltot/Ledd - 1) )) #g/s
-    
+
 
     Mdot_gain*= spy/msun
     Mdot_loss*= spy/msun #msun / yr
@@ -717,7 +705,7 @@ def fdot(t, f, rho0, cs0, X0, Y0, Z0, v0=None, tau0=None, omega0=None, Mbh=None,
 
     return np.array([dMx, dMy, dMz])
 
-def run(Ms, Xs, Ys, Zs, X0, Y0, Z0, Tend, rho0=10**-18, cs0=10**6, v0=None, tau0=None, omega0=None, h0=None, Mbh=None, alpha=None, mdot_method="bondi", full_output=False, t_eval=None, method='RK54', rtol=1e-6, atol=None, tkh=None, fnu=0.1, check_runaway=False, esc_reduce=False, do_feedback=False):
+def run(Ms, Xs, Ys, Zs, X0, Y0, Z0, Tend, rho0=10**-18, cs0=10**6, v0=None, tau0=None, omega0=None, h0=None, Mbh=None, alpha=None, mdot_method="bondi", full_output=False, t_eval=None, method='RK54', rtol=1e-6, atol=None, tkh=None, fnu=0.1, check_runaway=False, esc_reduce=True, do_feedback=False):
     """
     Calculate models of stellar evolution in AGN disks.
 
@@ -775,7 +763,7 @@ def run(Ms, Xs, Ys, Zs, X0, Y0, Z0, Tend, rho0=10**-18, cs0=10**6, v0=None, tau0
     fnu  : float, optional
         The fraction of energy lost via neutrinos during fusion. Defaults to 10%
     esc_reduce  : Boolean, optional
-        If True, reduces the escape velocity according to the Eddington ratio. Defaults to False. 
+        If True (default), reduces the escape velocity according to the Eddington ratio.
     do_feedback  : Boolean, optional
         If True, reduces the feedback processes limit the accretion rate. Defaults to False.
 
@@ -931,7 +919,7 @@ def run(Ms, Xs, Ys, Zs, X0, Y0, Z0, Tend, rho0=10**-18, cs0=10**6, v0=None, tau0
         termination = "solve_ivp error"
     elif (status == 1):
         tevents = sol.t_events
-        if len(tevents) > 1: 
+        if len(tevents) > 1:
           if tevents[1] > 1: termination = "runaway"
           else: termination = "hydrogen exhaustion"
         else: termination = "hydrogen exhaustion"
