@@ -3,7 +3,7 @@ Semi-analytical models of stellar evolution in AGN disks. See [the paper](https:
 
 ## Installation
 First, clone the repository using ``git clone https://github.com/ajdittmann/starsam.git``.  
-Then, install the package using ``pip install -e .`` or ``python setup.py install``. 
+Then, install the package using ``pip install -e .`` 
 
 Although it is not required, if [numba](https://numba.pydata.org/) is installed it will be used to accelerate calculations.
 
