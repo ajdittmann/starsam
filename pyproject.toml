@@ -1,0 +1,10 @@
+[build-system]
+requires = ["setuptools","numpy","scipy"]
+build-backend = "setuptools.build_meta"
+
+[tool.coverage.run]
+source = ["starsam"]
+
+[project]
+name        = "starsam"
+version     = "1.0.0"
